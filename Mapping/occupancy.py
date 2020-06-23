@@ -26,6 +26,7 @@ import inverse_sensor_model as inv
 import lidar_processing_utils 
 import bresenham
 import ransac
+import pcl_lidar
     
 if __name__ == "__main__":
 
@@ -54,6 +55,7 @@ if __name__ == "__main__":
     my_scene = nusc_.scene[0]
     prior = np.log(0.5 / (1 - 0.5))
     #lidar_pcls.render_height(axes, view=view)
+
     ##PARAMS for mapping
     # Renault Zoe max height is 1.56m
     min_height = -1.5
@@ -61,9 +63,9 @@ if __name__ == "__main__":
     #how far from the car to get measured point
     width = 10
     length = 10
-    #PARAMS for RANSAC
 
-     # Renault Zoe max height is 1.56m
+    #PARAMS for RANSAC
+    # Renault Zoe max height is 1.56m
     min_height_ran = -1.7
     max_height_ran= 0.1
     #how far from the car to get measured point
@@ -97,7 +99,8 @@ if __name__ == "__main__":
     # Query loading all sample tokens in one scene (2hz)
     sample_tokens = nusc_.field2token('sample','scene_token', my_scene_token[0])
     # get the first pose record to calculate pose different
-    sample_record = nusc_.get('sample', sample_tokens[10])
+    pcl_lidar.Lidar.getPoints(nusc_,sample_tokens[0])
+    sample_record = nusc_.get('sample', sample_tokens[0])
     sample_data_record = nusc_.get('sample_data', sample_record['data']['LIDAR_TOP'])
     first_pose_record = nusc_.get('ego_pose', sample_data_record['ego_pose_token'])
 
@@ -189,19 +192,7 @@ if __name__ == "__main__":
         
         #global
         map.mapUpdate(sensor_position,lidar_pcls_mod,pose_different_x[l],pose_different_y[l])
-    
-
-    #remember to appy transformation and 
-    # minus min of measurement to get the map inline with lidar
-    #map.grid[0]-= abs(min_x)
-    #map.grid[1]-= abs(min_y)
-    #print (map.grid)
-    #fig, axes = plt.subplots(ncols=1, figsize=(map.lenght/2, map.width/2))  # Create a figure containing a single axes.
-    
- 
-    
-   
-    
+      
     #print local map
     if print_local_map == True:
         fig, axs = plt.subplots(8,5)
