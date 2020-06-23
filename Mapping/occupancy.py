@@ -23,6 +23,7 @@ from matplotlib import cm
 import datetime
 import occupancy_grid_utils as occ
 import inverse_sensor_model as inv
+import lidar_processing_utils 
 import bresenham
 from tqdm import tqdm
 from sklearn import linear_model, datasets
@@ -55,22 +56,34 @@ if __name__ == "__main__":
     my_scene = nusc_.scene[0]
     prior = np.log(0.5 / (1 - 0.5))
     #lidar_pcls.render_height(axes, view=view)
+    ##PARAMS for mapping
     # Renault Zoe max height is 1.56m
     min_height = -1.5
     max_height = 0.1
+    #how far from the car to get measured point
     max_measure_width = 10
     max_measure_long = 10
+    #PARAMS for RANSAC
+
+     # Renault Zoe max height is 1.56m
+    min_height_ran = -1.7
+    max_height_ran= 0.1
+    #how far from the car to get measured point
+    max_measure_width_ran = 10
+    max_measure_long_ran = 10
+
     r = 1
     local_map = []
     pose_different_x = []
     pose_different_y = []
     map_scale = 2
     map = occ.Map( lenght=max_measure_long*map_scale,width=max_measure_width*map_scale,resolution = r)
-    #print(my_scene)
+    
     
     #Ploting option
 
     print_local_map = False
+    detect_ground = False
     """
     List sample, attributes, categories, scenes
     """
@@ -84,15 +97,19 @@ if __name__ == "__main__":
     # Query loading all sample tokens in one scene (2hz)
     sample_tokens = nusc_.field2token('sample','scene_token', my_scene_token[0])
     
-    sample_record = nusc_.get('sample', sample_tokens[0])
+    sample_record = nusc_.get('sample', sample_tokens[10])
     sample_data_record = nusc_.get('sample_data', sample_record['data']['LIDAR_TOP'])
     first_pose_record = nusc_.get('ego_pose', sample_data_record['ego_pose_token'])
+
+    #Loop through all samples
+
+
     for l in tqdm(range(len(sample_tokens))):
-    #get first sample of the scene
+        #get first sample of the scene
         sample_record = nusc_.get('sample', sample_tokens[l])
         lidar_token = sample_record['data']['LIDAR_TOP']
         sample_data_record = nusc_.get('sample_data', lidar_token)
-    #position of that sensor
+        #position of that sensor
         pose_record = nusc_.get('ego_pose', sample_data_record['ego_pose_token'])
         time_stamp = pose_record ['timestamp']
         print(datetime.datetime.fromtimestamp(time_stamp/ 1000000.0))
@@ -105,72 +122,63 @@ if __name__ == "__main__":
     
         view=  np.eye(4)
         lidar_pcls =  LidarPointCloud.from_file(data_path)
-        z_array = lidar_pcls.points[2]
-        x_array = lidar_pcls.points[0]
-        y_array = lidar_pcls.points[1]
-
-        z_array = [2,3,3,3,5,7,8,11,9,10]
-        x_array = [1,2,3,4,5,6,7,8,9,10]
-        y_array = [5,6,2,3,13,4,1,2,4,8]
-
-        point_test = np.array ([x_array,y_array,z_array],np.int32)
         
-        ##Run RANSAC
-        #Running 1 features as z to fit the height
-        print("Detecting ground plane with RANSAC")
-        #ransac = linear_model.RANSACRegressor()
-        #ransac_fit.fit_plane_LSE_RANSAC
+        if detect_ground == True:
+            ransac_point = lidar_processing_utils.LidarProcessing.proccess_point(lidar_pcls,min_height_ran,max_height_ran,
+                                             max_measure_long_ran, max_measure_width_ran,pre_process= True)
+            ##TEST DATA
+            # z_array = [2,3,3,3,5,7,8,11,9,10]
+            # x_array = [1,2,3,4,5,6,7,8,9,10]
+            # y_array = [5,6,2,3,13,4,1,2,4,8]
+            # point_test = np.array ([x_array,y_array,z_array],np.int32)
+             ##Run RANSAC to l sample data
+            #Running 1 features as z to fit the height
 
+            print("Detecting ground plane with RANSAC")
+            ransac_fit = ransac.Ransac()
+            ransac_point = ransac_point[:3,:]
+            plane, inlier_list = ransac_fit.fit_plane_ransac(ransac_point.T,iters = 10000, inlier_thresh = 0.001)
         
-        ransac_fit = ransac.Ransac()
-        points = lidar_pcls.points[0:3,:]
-        plane, inlier_list = ransac_fit.fit_plane_ransac(point_test.T)
-        
-        # # the plane equation
-        z = lambda x,y: (- 0 - plane[0]*x -  plane[1]*y) /  plane[2]
+            # # the plane equation
+            z = lambda x,y: (- 0 - plane[0]*x -  plane[1]*y) /  plane[2]
+            tmp_x = np.linspace(np.amin(ransac_point[0 ,inlier_list]),np.amax(ransac_point[0,inlier_list]),10)
+            x,y = np.meshgrid(tmp_x,tmp_x)
 
-        tmp_x = np.linspace(np.amin(point_test[0 ,inlier_list]),np.amax(point_test[0,inlier_list]),10)
-       
-     
-        x,y = np.meshgrid(tmp_x,tmp_x)
+            fig = plt.figure()
+            ax  = fig.add_subplot(111, projection='3d')
+            ax.scatter(ransac_point[0],ransac_point[1], ransac_point[2],c = 'g', marker= ',')
+            ax.plot_surface(x, y, z(x,y))
+            #ax.view_init(10, 60)
+            plt.show()
+            #ransac.fit(X, y)
+            #inlier_mask = ransac.inlier_mask_
+            #outlier_mask = np.logical_not(inlier_mask)
 
-        fig = plt.figure()
-        ax  = fig.add_subplot(111, projection='3d')
-        ax.scatter(x_array, y_array, z_array,c = 'g', marker= ',')
-        ax.plot_surface(x, y, z(x,y))
-    
-        #ax.view_init(10, 60)
-        plt.show()
-        #ransac.fit(X, y)
-        #inlier_mask = ransac.inlier_mask_
-        #outlier_mask = np.logical_not(inlier_mask)
+            ##END RANSAC
 
-        ##END RANSAC
-
-    # Delete all points that outside the range we want
-      
-        intensity_array = lidar_pcls.points[3]
-        lidar_pcls_mod = np.array
-        lidar_pcls_mod = lidar_pcls.points
+        # Delete all points that outside the range we want
+        # z_array = ransac_point.points[2]
+        # x_array = ransac_point.points[0]
+        # y_array = ransac_point.points[1]
+        # intensity_array = lidar_pcls.points[3]
+        lidar_pcls_mod = lidar_processing_utils.LidarProcessing.proccess_point(lidar_pcls,min_height,max_height,
+                                             max_measure_long, max_measure_width,pre_process= True)
         #=-10m back and forth and car height
-        index_result = np.where((z_array <= min_height) | (z_array>= max_height) 
-                            |(abs(x_array) >max_measure_width) |(abs(y_array) >max_measure_long))
-        x_array = np.delete (x_array,index_result)
-        y_array = np.delete (y_array,index_result)
-        z_array = np.delete (z_array,index_result)
-        intensity_array = np.delete (intensity_array,index_result)
-        lidar_pcls_mod =  np.vstack (((x_array,y_array),(z_array,intensity_array)))
-        lidar_pcls.points = lidar_pcls_mod
-        lidar_pcls_global = lidar_pcls_mod
-        #Perform orthographic projection if pcl, we dont need to do projection, only do with 3D boxes
-        #lidar_pcls_mod_2d = view_points(lidar_pcls_mod[0:3][:], view, normalize=False)
+        # index_result = np.where((z_array <= min_height) | (z_array>= max_height) 
+        #                     |(abs(x_array) >max_measure_width) |(abs(y_array) >max_measure_long))
+        # x_array = np.delete (x_array,index_result)
+        # y_array = np.delete (y_array,index_result)
+        # z_array = np.delete (z_array,index_result)
+        # intensity_array = np.delete (intensity_array,index_result)
+        # lidar_pcls_mod =  np.vstack (((x_array,y_array),(z_array,intensity_array)))
+        # lidar_pcls.points = lidar_pcls_mod
+        # lidar_pcls_global = lidar_pcls_mod
+    
 
         
         print (lidar_pcls.points)
         
         
-        #lidar_pcls.render_height(axes, view=view)
-        #nusc_.render_sample_data(sample_record['data']['CAM_FRONT'])
         
         #create an map grid 100*100 with resolution r (m)
         
@@ -194,30 +202,10 @@ if __name__ == "__main__":
         local_map.append(occ.Map( lenght=max_measure_long*map_scale,
                                 width=max_measure_width*map_scale,resolution = r))
         local_map[l].mapUpdate(sensor_pos_local,lidar_pcls_mod,0,0)
+        
         #global
         map.mapUpdate(sensor_position,lidar_pcls_mod,pose_different_x[l],pose_different_y[l])
     
-        
-
-        # for i in tqdm(range(len(lidar_pcls_mod[0]))):
-        # #get end point coordinate in interger
-        #     x = int(xe[i]) # switch coordinate to loop through the nparray
-        #     y = int(ye[i])
-
-        #     if x >= (map.lenght/r) or  y >= (map.width/r): 
-        #         continue #measure is out of grid, skip
-        #     map.grid[x,y] += inv.locc
-        # #calculate the line between sensor and z using bresenham
-        #     l = bresenham.bresenham(sensor_position,[x,y])
-        #     if map.grid[x,y]>inv.lmax: #clamping
-        #         map.grid[x,y]=inv.lmax
-
-        #     for (j,k) in l.path: 
-        #         if j >= (map.lenght/r) or  k >= (map.width/r): 
-        #             continue #measure is out of grid, skip
-        #         map.grid [j,k] += inv.lfree
-        #         if map.grid[j,k]<inv.lmin: #min
-        #             map.grid[j,k]=inv.lmin
 
     #remember to appy transformation and 
     # minus min of measurement to get the map inline with lidar
@@ -228,7 +216,7 @@ if __name__ == "__main__":
     
  
     
-    #ax.plot(pose_different_x, pose_different_y)
+   
     
     #print local map
     if print_local_map == True:
@@ -246,10 +234,11 @@ if __name__ == "__main__":
                 axs[j,i].axis('tight')
     
     #print global map
-    # plt.contourf(local_map[l].grid[:,:], cmap=cm.Greys)        
-    # plt.axis('equal')
-    # plt.xlabel('X')
-    # plt.ylabel('Y')
+    else:
+        plt.contourf(local_map[l].grid[:,:], cmap=cm.Greys)        
+        plt.axis('equal')
+        plt.xlabel('X')
+        plt.ylabel('Y')
     plt.show()
 
 

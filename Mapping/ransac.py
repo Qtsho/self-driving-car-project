@@ -97,7 +97,7 @@ class Ransac:
         return null_space
 
     def get_point_dist(self,points, plane):
-        # return: 1d array of size N (number of points) the distance
+        # return: 1d array of size N (number of points) the distance in the 
         dists = np.abs(points @ plane) / np.sqrt(plane[0]**2 + plane[1]**2 + plane[2]**2)
         return dists
 
@@ -111,7 +111,7 @@ class Ransac:
         max_inlier_list = None
         
         N = points.shape[0]
-        assert N >= 3
+        assert N >= 3#always choice from 3 more than 3 points
 
         for i in tqdm(range(iters)):
             chose_id = np.random.choice(N, 3, replace=False)
