@@ -25,8 +25,6 @@ import occupancy_grid_utils as occ
 import inverse_sensor_model as inv
 import lidar_processing_utils 
 import bresenham
-from tqdm import tqdm
-from sklearn import linear_model, datasets
 import ransac
     
 if __name__ == "__main__":
@@ -61,8 +59,8 @@ if __name__ == "__main__":
     min_height = -1.5
     max_height = 0.1
     #how far from the car to get measured point
-    max_measure_width = 10
-    max_measure_long = 10
+    width = 10
+    length = 10
     #PARAMS for RANSAC
 
      # Renault Zoe max height is 1.56m
@@ -77,7 +75,9 @@ if __name__ == "__main__":
     pose_different_x = []
     pose_different_y = []
     map_scale = 2
-    map = occ.Map( lenght=max_measure_long*map_scale,width=max_measure_width*map_scale,resolution = r)
+    
+    # Create a map
+    map = occ.Map( lenght=length*map_scale,width=width*map_scale,resolution = r)
     
     
     #Ploting option
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     print ("Scene token:" , my_scene_token)
     # Query loading all sample tokens in one scene (2hz)
     sample_tokens = nusc_.field2token('sample','scene_token', my_scene_token[0])
-    
+    # get the first pose record to calculate pose different
     sample_record = nusc_.get('sample', sample_tokens[10])
     sample_data_record = nusc_.get('sample_data', sample_record['data']['LIDAR_TOP'])
     first_pose_record = nusc_.get('ego_pose', sample_data_record['ego_pose_token'])
@@ -109,6 +109,7 @@ if __name__ == "__main__":
         sample_record = nusc_.get('sample', sample_tokens[l])
         lidar_token = sample_record['data']['LIDAR_TOP']
         sample_data_record = nusc_.get('sample_data', lidar_token)
+
         #position of that sensor
         pose_record = nusc_.get('ego_pose', sample_data_record['ego_pose_token'])
         time_stamp = pose_record ['timestamp']
@@ -122,7 +123,8 @@ if __name__ == "__main__":
     
         view=  np.eye(4)
         lidar_pcls =  LidarPointCloud.from_file(data_path)
-        
+
+        #BEGIN RANSAC
         if detect_ground == True:
             ransac_point = lidar_processing_utils.LidarProcessing.proccess_point(lidar_pcls,min_height_ran,max_height_ran,
                                              max_measure_long_ran, max_measure_width_ran,pre_process= True)
@@ -137,9 +139,9 @@ if __name__ == "__main__":
             print("Detecting ground plane with RANSAC")
             ransac_fit = ransac.Ransac()
             ransac_point = ransac_point[:3,:]
-            plane, inlier_list = ransac_fit.fit_plane_ransac(ransac_point.T,iters = 10000, inlier_thresh = 0.001)
+            plane, inlier_list = ransac_fit.fit_plane_ransac(ransac_point.T,iters = 10000, inlier_thresh = 0.001) #[x y z]T
         
-            # # the plane equation
+            ## calculate the plane equation
             z = lambda x,y: (- 0 - plane[0]*x -  plane[1]*y) /  plane[2]
             tmp_x = np.linspace(np.amin(ransac_point[0 ,inlier_list]),np.amax(ransac_point[0,inlier_list]),10)
             x,y = np.meshgrid(tmp_x,tmp_x)
@@ -156,27 +158,10 @@ if __name__ == "__main__":
 
             ##END RANSAC
 
-        # Delete all points that outside the range we want
-        # z_array = ransac_point.points[2]
-        # x_array = ransac_point.points[0]
-        # y_array = ransac_point.points[1]
-        # intensity_array = lidar_pcls.points[3]
-        lidar_pcls_mod = lidar_processing_utils.LidarProcessing.proccess_point(lidar_pcls,min_height,max_height,
-                                             max_measure_long, max_measure_width,pre_process= True)
-        #=-10m back and forth and car height
-        # index_result = np.where((z_array <= min_height) | (z_array>= max_height) 
-        #                     |(abs(x_array) >max_measure_width) |(abs(y_array) >max_measure_long))
-        # x_array = np.delete (x_array,index_result)
-        # y_array = np.delete (y_array,index_result)
-        # z_array = np.delete (z_array,index_result)
-        # intensity_array = np.delete (intensity_array,index_result)
-        # lidar_pcls_mod =  np.vstack (((x_array,y_array),(z_array,intensity_array)))
-        # lidar_pcls.points = lidar_pcls_mod
-        # lidar_pcls_global = lidar_pcls_mod
-    
-
+        lidar_pcls_mod = lidar_processing_utils.LidarProcessing.proccess_point(lidar_pcls=lidar_pcls,min_height = min_height,max_height = max_height,
+                                             max_measure_long = length, max_measure_width = width, pre_process= True)
         
-        print (lidar_pcls.points)
+        print (lidar_pcls_mod)
         
         
         
@@ -184,7 +169,6 @@ if __name__ == "__main__":
         
         lidar_pcls_mod= lidar_pcls_mod/r # convert to fit the map
         #using Bresenham algorithm to calculate line between endpoint
-        #dont have to loop through all the map grid to calculate the log odd
         #
         #loop through all measurements
         xe = lidar_pcls_mod[0] + pose_different_y[l]
@@ -199,8 +183,8 @@ if __name__ == "__main__":
                         int(abs(np.amin(lidar_pcls_mod[1])))] 
         #intergrate measurement 5 times
         #local
-        local_map.append(occ.Map( lenght=max_measure_long*map_scale,
-                                width=max_measure_width*map_scale,resolution = r))
+        local_map.append(occ.Map( lenght=length*map_scale,
+                                width=width*map_scale,resolution = r))
         local_map[l].mapUpdate(sensor_pos_local,lidar_pcls_mod,0,0)
         
         #global
