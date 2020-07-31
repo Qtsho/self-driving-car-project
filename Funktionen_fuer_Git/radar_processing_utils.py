@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 @author: Justin
 FH Dortmund
@@ -66,6 +64,7 @@ class Radar:
         
         # calculate the radial velocity of the detections to the radar-sensor
         # w.r.t detections_phi (!!!)
-        detections_radial_velocity = vx_array * np.cos(detections_phi)
+        detections_radial_velocity = vx_array * np.cos(np.deg2rad(detections_phi))
+        
         
         return detections_distance, detections_phi, detections_radial_velocity
