@@ -6,8 +6,8 @@ class Lidar:
     def __init__(self):
         super().__init__()
     @classmethod
-    def get_points(cls, nuc, sample_token):
-        # file_path = '/home/tientran/data/sets/nuscenes/samples/LIDAR_TOP/n008-2018-08-01-15-16-36-0400__LIDAR_TOP__1533151603547590.pcd.bin'
+    def getPoints(cls, nuc, sample_token):
+        # ile_path = '/home/tientran/data/sets/nuscenes/samples/LIDAR_TOP/n008-2018-08-01-15-16-36-0400__LIDAR_TOP__1533151603547590.pcd.bin'
 
         # with open(file_path, "rb") as f:
         # number = f.read(4)

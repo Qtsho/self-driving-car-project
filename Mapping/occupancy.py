@@ -10,6 +10,7 @@ from nuscenes import NuScenes
 import matplotlib.pyplot as plt
 import matplotlib 
 from matplotlib.axes import Axes
+from mpl_toolkits.mplot3d import Axes3D
 from nuscenes.map_expansion.map_api import NuScenesMap
 import scipy.io
 from typing import List, Tuple, Union
@@ -66,11 +67,11 @@ if __name__ == "__main__":
 
     #PARAMS for RANSAC
     # Renault Zoe max height is 1.56m
-    min_height_ran = -1.7
-    max_height_ran= 0.1
+    min_height_ran = -10
+    max_height_ran= 2
     #how far from the car to get measured point
-    max_measure_width_ran = 10
-    max_measure_long_ran = 10
+    max_width_ran = 8
+    max_long_ran = 20
 
     r = 1
     local_map = []
@@ -85,7 +86,9 @@ if __name__ == "__main__":
     #Ploting option
 
     print_local_map = False
-    detect_ground = False
+    render_sample_data = False
+    detect_ground = True
+    test_ransac= False
     """
     List sample, attributes, categories, scenes
     """
@@ -93,13 +96,13 @@ if __name__ == "__main__":
     #nusc_.list_attributes()
     #nusc_.list_categories()
     #nusc_.list_scenes()
-
+    #SELECT SCENE
     my_scene_token = nusc_.field2token('scene', 'name', 'scene-0103')
     print ("Scene token:" , my_scene_token)
     # Query loading all sample tokens in one scene (2hz)
     sample_tokens = nusc_.field2token('sample','scene_token', my_scene_token[0])
     # get the first pose record to calculate pose different
-    pcl_lidar.Lidar.getPoints(nusc_,sample_tokens[0])
+    
     sample_record = nusc_.get('sample', sample_tokens[0])
     sample_data_record = nusc_.get('sample_data', sample_record['data']['LIDAR_TOP'])
     first_pose_record = nusc_.get('ego_pose', sample_data_record['ego_pose_token'])
@@ -112,7 +115,9 @@ if __name__ == "__main__":
         sample_record = nusc_.get('sample', sample_tokens[l])
         lidar_token = sample_record['data']['LIDAR_TOP']
         sample_data_record = nusc_.get('sample_data', lidar_token)
-
+         
+        if render_sample_data == True:
+            nusc_.render_sample_data(lidar_token)
         #position of that sensor
         pose_record = nusc_.get('ego_pose', sample_data_record['ego_pose_token'])
         time_stamp = pose_record ['timestamp']
@@ -129,40 +134,66 @@ if __name__ == "__main__":
 
         #BEGIN RANSAC
         if detect_ground == True:
-            ransac_point = lidar_processing_utils.LidarProcessing.proccess_point(lidar_pcls,min_height_ran,max_height_ran,
-                                             max_measure_long_ran, max_measure_width_ran,pre_process= True)
+            ransac_point = lidar_processing_utils.LidarProcessing.proccess_point(lidar_pcls=lidar_pcls,
+                                            min_height = min_height_ran,max_height = max_height_ran,
+                                            max_measure_long = max_long_ran, max_measure_width = max_width_ran, pre_process= True)
             ##TEST DATA
-            # z_array = [2,3,3,3,5,7,8,11,9,10]
-            # x_array = [1,2,3,4,5,6,7,8,9,10]
-            # y_array = [5,6,2,3,13,4,1,2,4,8]
-            # point_test = np.array ([x_array,y_array,z_array],np.int32)
-             ##Run RANSAC to l sample data
+           
+            ##Run RANSAC to l sample data
             #Running 1 features as z to fit the height
-
             print("Detecting ground plane with RANSAC")
             ransac_fit = ransac.Ransac()
             ransac_point = ransac_point[:3,:]
-            plane, inlier_list = ransac_fit.fit_plane_ransac(ransac_point.T,iters = 10000, inlier_thresh = 0.001) #[x y z]T
-        
-            ## calculate the plane equation
-            z = lambda x,y: (- 0 - plane[0]*x -  plane[1]*y) /  plane[2]
+            ransac_point_t = ransac_point.T
+            
+            if test_ransac == True:         
+             
+                x_array =  [1,2,3,2,5,6,47,8,9,10]
+                y_array =  [1,2,3,4,15,7,6,2,1,10]
+                z_array =  [0,1,2,6,-0,-4,-0,-0,-0,-0.2]
+
+                point_test = np.array ([x_array,y_array,z_array],np.int32)
+                ransac_point=point_test
+                ransac_point_t = point_test.T
+            plane, inlier_list, d, outlier_list= ransac_fit.fit_plane_ransac(ransac_point_t,iters = 10000, 
+                                                        inlier_thresh = 0.01,return_outlier_list = True,plot= True) #[x y z]T
+           
+            print(inlier_list)
+            ## calculate the plane equation ax+by+cz = d
+            z = lambda x,y: (- d - plane[0]*x -  plane[1]*y) /  plane[2]
+            
             tmp_x = np.linspace(np.amin(ransac_point[0 ,inlier_list]),np.amax(ransac_point[0,inlier_list]),10)
-            x,y = np.meshgrid(tmp_x,tmp_x)
+            tmp_y = np.linspace(np.amin(ransac_point[1 ,inlier_list]),np.amax(ransac_point[1,inlier_list]),10)
+            x,y = np.meshgrid(tmp_x,tmp_y)
 
             fig = plt.figure()
-            ax  = fig.add_subplot(111, projection='3d')
-            ax.scatter(ransac_point[0],ransac_point[1], ransac_point[2],c = 'g', marker= ',')
+            
+            ax = Axes3D(fig)
+            #plcs = lidar_pcls 
+            #plcs.points = ransac_point
+            #lidar_pcls.render_height(ax,view = view)
+
+            #ax.scatter(ransac_point[0],ransac_point[1],ransac_point[2],c = 'r', marker= ',')
+            
+            ax.scatter(ransac_point[0,inlier_list],ransac_point[1,inlier_list],ransac_point[2,inlier_list],c = ransac_point[2,inlier_list], marker= ',')
+            ax.scatter(ransac_point[0,outlier_list],ransac_point[1,outlier_list],ransac_point[2,outlier_list],c = 'g', marker= ',')
+           
             ax.plot_surface(x, y, z(x,y))
-            #ax.view_init(10, 60)
+            #ax.plot_surface(x, y,0,cmap='viridis')
+            ax.set_xlim(-20, 20)
+            ax.set_ylim(-20, 20)
+            #ax.scatter(ransac_point[0,inlier_list],ransac_point[1,inlier_list],ransac_point[2,inlier_list],c = 'b', marker= ',')
+            
+            
+
             plt.show()
-            #ransac.fit(X, y)
-            #inlier_mask = ransac.inlier_mask_
-            #outlier_mask = np.logical_not(inlier_mask)
+           
 
             ##END RANSAC
 
-        lidar_pcls_mod = lidar_processing_utils.LidarProcessing.proccess_point(lidar_pcls=lidar_pcls,min_height = min_height,max_height = max_height,
-                                             max_measure_long = length, max_measure_width = width, pre_process= True)
+        lidar_pcls_mod = lidar_processing_utils.LidarProcessing.proccess_point(lidar_pcls=lidar_pcls,
+                                            min_height = min_height,max_height = max_height,
+                                            max_measure_long = length, max_measure_width = width, pre_process= True)
         
         print (lidar_pcls_mod)
         
